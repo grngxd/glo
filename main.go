@@ -8,18 +8,34 @@ import (
 )
 
 func main() {
+	fmt.Println("ready")
+
 	user32 := syscall.NewLazyDLL("user32.dll")
 
 	gfw := user32.NewProc("GetForegroundWindow")
-	hwnd, _, _ := gfw.Call()
-	if hwnd == 0 {
-		panic("failed to get foreground window")
+
+	var windows []*window.Window
+
+	for {
+		hwnd, _, _ := gfw.Call()
+		if hwnd == 0 {
+			continue
+		}
+
+		exists := false
+		for _, w := range windows {
+			if w.Hwnd() == hwnd {
+				exists = true
+				break
+			}
+		}
+
+		if !exists {
+			w := window.New(hwnd)
+			windows = append(windows, w)
+			fmt.Printf("%v: %v\n", len(windows), w.Hwnd())
+		}
+
+		time.Sleep(10 * time.Millisecond)
 	}
-
-	w := window.New(hwnd)
-	fmt.Printf("Window Handle: %d\n", w.Hwnd())
-
-	time.Sleep(3 * time.Second)
-
-	w.Restore()
 }
