@@ -1,64 +1,197 @@
 package window
 
 import (
-	"errors"
+	"fmt"
 	"syscall"
 	"unsafe"
 )
 
-var (
-	user32                  = syscall.NewLazyDLL("user32.dll")
-	procGetForegroundWindow = user32.NewProc("GetForegroundWindow")
-	procGetWindowRect       = user32.NewProc("GetWindowRect")
-	procSetWindowPos        = user32.NewProc("SetWindowPos")
-	procMonitorFromWindow   = user32.NewProc("MonitorFromWindow")
-	procGetMonitorInfoW     = user32.NewProc("GetMonitorInfoW")
-)
+var user32 = syscall.NewLazyDLL("user32.dll")
 
-type Rect struct{ Left, Top, Right, Bottom int32 }
+type Window struct {
+	hwnd uintptr
 
-type MONITORINFO struct {
-	CbSize    uint32
-	RcMonitor Rect
-	RcWork    Rect
-	DwFlags   uint32
+	width  int
+	height int
+
+	x int
+	y int
 }
 
-const (
-	MONITOR_DEFAULTTONEAREST = 0x00000002
-	SWP_NOZORDER             = 0x0004
-	SWP_NOACTIVATE           = 0x0010
-)
+func New(hwnd uintptr) *Window {
+	w := &Window{hwnd: hwnd}
 
-func Foreground() uintptr { h, _, _ := procGetForegroundWindow.Call(); return h }
-
-func GetRect(hwnd uintptr) (Rect, error) {
-	var r Rect
-	ok, _, _ := procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&r)))
-	if ok == 0 {
-		return r, errors.New("GetWindowRect failed")
+	if err := w.updateRect(); err != nil {
+		panic(fmt.Errorf("failed to create window: %v", err))
 	}
-	return r, nil
+
+	return w
 }
 
-func WorkArea(hwnd uintptr) (Rect, error) {
-	m, _, _ := procMonitorFromWindow.Call(hwnd, MONITOR_DEFAULTTONEAREST)
-	if m == 0 {
-		return Rect{}, errors.New("MonitorFromWindow failed")
-	}
-	var mi MONITORINFO
-	mi.CbSize = uint32(unsafe.Sizeof(mi))
-	ok, _, _ := procGetMonitorInfoW.Call(m, uintptr(unsafe.Pointer(&mi)))
-	if ok == 0 {
-		return Rect{}, errors.New("GetMonitorInfoW failed")
-	}
-	return mi.RcWork, nil
+func (w *Window) Hwnd() uintptr {
+	return w.hwnd
 }
 
-func MoveResize(hwnd uintptr, left, top, width, height int32) error {
-	r, _, _ := procSetWindowPos.Call(hwnd, 0, uintptr(left), uintptr(top), uintptr(width), uintptr(height), SWP_NOZORDER|SWP_NOACTIVATE)
+func (w *Window) updateRect() error {
+	gwr := user32.NewProc("GetWindowRect")
+
+	var rect struct {
+		Left   int32
+		Top    int32
+		Right  int32
+		Bottom int32
+	}
+
+	r, _, _ := gwr.Call(w.hwnd, uintptr(unsafe.Pointer(&rect)))
 	if r == 0 {
-		return errors.New("SetWindowPos failed")
+		return fmt.Errorf("GetWindowRect failed")
 	}
+
+	w.x = int(rect.Left)
+	w.y = int(rect.Top)
+	w.width = int(rect.Right - rect.Left)
+	w.height = int(rect.Bottom - rect.Top)
+
 	return nil
+}
+
+func (w *Window) GetPosition() (int, int) {
+	err := w.updateRect()
+	if err != nil {
+		panic(fmt.Errorf("failed to get window position: %v", err))
+	}
+
+	return w.x, w.y
+}
+
+func (w *Window) GetSize() (int, int) {
+	err := w.updateRect()
+	if err != nil {
+		panic(fmt.Errorf("failed to get window size: %v", err))
+	}
+
+	return w.width, w.height
+}
+
+func (w *Window) MoveTo(x, y int) error {
+	err := w.updateRect()
+	if err != nil {
+		return fmt.Errorf("failed to get window position: %v", err)
+	}
+
+	move := user32.NewProc("MoveWindow")
+	r, _, _ := move.Call(w.hwnd, uintptr(x), uintptr(y), uintptr(w.width), uintptr(w.height), 1)
+	if r == 0 {
+		return fmt.Errorf("MoveWindow failed")
+	}
+
+	w.x = x
+	w.y = y
+
+	return nil
+}
+
+func (w *Window) MoveDelta(dx, dy int) error {
+	err := w.updateRect()
+	if err != nil {
+		return fmt.Errorf("failed to get window position: %v", err)
+	}
+
+	move := user32.NewProc("MoveWindow")
+	r, _, _ := move.Call(w.hwnd, uintptr(w.x+dx), uintptr(w.y+dy), uintptr(w.width), uintptr(w.height), 1)
+	if r == 0 {
+		return fmt.Errorf("MoveWindow failed")
+	}
+
+	w.x += dx
+	w.y += dy
+
+	return nil
+}
+
+func (w *Window) Resize(width, height int) error {
+	err := w.updateRect()
+	if err != nil {
+		return fmt.Errorf("failed to get window position: %v", err)
+	}
+
+	resize := user32.NewProc("MoveWindow")
+	r, _, _ := resize.Call(w.hwnd, uintptr(w.x), uintptr(w.y), uintptr(width), uintptr(height), 1)
+	if r == 0 {
+		return fmt.Errorf("MoveWindow failed")
+	}
+
+	w.width = width
+	w.height = height
+
+	return nil
+}
+
+func (w *Window) ResizeDelta(dw, dh int) error {
+	err := w.updateRect()
+	if err != nil {
+		return fmt.Errorf("failed to get window position: %v", err)
+	}
+
+	resize := user32.NewProc("MoveWindow")
+	r, _, _ := resize.Call(w.hwnd, uintptr(w.x), uintptr(w.y), uintptr(w.width+dw), uintptr(w.height+dh), 1)
+	if r == 0 {
+		return fmt.Errorf("MoveWindow failed")
+	}
+
+	w.width += dw
+	w.height += dh
+
+	return nil
+}
+
+func (w *Window) GetRect() (int, int, int, int) {
+	err := w.updateRect()
+	if err != nil {
+		panic(fmt.Errorf("failed to get window rect: %v", err))
+	}
+
+	return w.x, w.y, w.width, w.height
+}
+
+func (w *Window) showWindow(nCmdShow int) error {
+	err := w.updateRect()
+	if err != nil {
+		return fmt.Errorf("failed to get window position: %v", err)
+	}
+
+	maximise := user32.NewProc("ShowWindow")
+	r, _, _ := maximise.Call(w.hwnd, uintptr(nCmdShow))
+	if r == 0 {
+		return fmt.Errorf("ShowWindow failed")
+	}
+
+	return nil
+}
+
+func (w *Window) Minimise() error {
+	err := w.updateRect()
+	if err != nil {
+		return fmt.Errorf("failed to get window position: %v", err)
+	}
+
+	return w.showWindow(2) // SW_SHOWMINIMIZED
+}
+
+func (w *Window) Maximise() error {
+	err := w.updateRect()
+	if err != nil {
+		return fmt.Errorf("failed to get window position: %v", err)
+	}
+
+	return w.showWindow(3) // SW_SHOWMAXIMIZED / SW_MAXIMIZE
+}
+
+func (w *Window) Restore() error {
+	err := w.updateRect()
+	if err != nil {
+		return fmt.Errorf("failed to get window position: %v", err)
+	}
+
+	return w.showWindow(1) // SW_SHOWNORMAL / SW_NORMAL
 }
