@@ -20,6 +20,11 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-build
+          path: ./glo
 
   build-win:
     runs-on: windows-latest
@@ -36,4 +41,39 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-build
+          path: ./glo.exe
   
+    release:
+      needs: [build-nux, build-win]
+      runs-on: ubuntu-latest
+      steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: linux-build
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: windows-build
+      - name: Upload Linux asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./glo
+          asset_name: glo-linux
+          asset_content_type: application/octet-stream
+      - name: Upload Windows asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./glo.exe
+          asset_name: glo-windows.exe
+          asset_content_type: application/octet-stream
