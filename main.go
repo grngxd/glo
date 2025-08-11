@@ -16,7 +16,12 @@ func main() {
 	user32 := syscall.NewLazyDLL("user32.dll")
 	gfw := user32.NewProc("GetForegroundWindow")
 
-	var windows []*window.Window
+	type managedWindow struct {
+		win                        *window.Window
+		origX, origY, origW, origH int
+	}
+
+	var windows []*managedWindow
 
 	padding := 25
 
@@ -30,8 +35,9 @@ func main() {
 		case <-exitChan:
 			fmt.Println("cleaning up")
 
-			for _, w := range windows {
-				w.Restore()
+			for _, mw := range windows {
+				mw.win.Restore()
+				mw.win.SetRect(mw.origX, mw.origY, mw.origW, mw.origH)
 			}
 
 			running = false
@@ -44,8 +50,8 @@ func main() {
 			}
 
 			exists := false
-			for _, w := range windows {
-				if w.Hwnd() == hwnd {
+			for _, mw := range windows {
+				if mw.win.Hwnd() == hwnd {
 					exists = true
 					break
 				}
@@ -53,7 +59,9 @@ func main() {
 
 			if !exists {
 				w := window.New(hwnd)
-				windows = append(windows, w)
+				x, y, w0, h0 := w.GetRect()
+				windows = append(windows, &managedWindow{win: w, origX: x, origY: y, origW: w0, origH: h0})
+
 				fmt.Printf("%v: %v\n", len(windows), w.Hwnd())
 
 				w.Restore()
