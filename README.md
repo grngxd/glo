@@ -1,6 +1,8 @@
 > ` a togglable tiling window manager for Windows 10/11 `
 
-![glo](./assets/glo.svg)
+<p align="center" style="width:100%;">
+    <img src="./assets/glo.svg" alt="glo banner" style="width:100%;max-width:100%;">
+</p>
 
 > [!CAUTION]
 > ### glo is in early development & may cause issues require a restart. use at your own risk.
