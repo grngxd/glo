@@ -1,8 +1,11 @@
-# glo
 > ` a togglable tiling window manager for Windows 10/11 `
+
+![glo](./assets/glo.svg)
 
 > [!CAUTION]
 > ### glo is in early development & may cause issues require a restart. use at your own risk.
+
+![example](./assets/example.webp)
 
 ## usage
 `glo [-padding 30] [-master 0.6]`

@@ -68,12 +68,13 @@ func main() {
 
 	running := true
 
+	hotkey.RegisterGlobalHotkey(1, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0x4F) // toggle
+	hotkey.RegisterGlobalHotkey(2, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBB) // grow master (+)
+	hotkey.RegisterGlobalHotkey(3, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBD) // shrink master (-)
+	hotkey.RegisterGlobalHotkey(4, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBE) // rotate master (.)
+	hotkey.RegisterGlobalHotkey(5, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0x51) // quit (Q)
+
 	go func() {
-		hotkey.RegisterGlobalHotkey(1, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0x4F) // toggle
-		hotkey.RegisterGlobalHotkey(2, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBB) // grow master (+)
-		hotkey.RegisterGlobalHotkey(3, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBD) // shrink master (-)
-		hotkey.RegisterGlobalHotkey(4, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBE) // rotate master (.)
-		hotkey.RegisterGlobalHotkey(5, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0x51) // quit (Q)
 		hotkey.ListenHotkeys(func(id int) {
 			mu.RLock()
 			snapshot := append([]*window.Window(nil), windows...)
