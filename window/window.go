@@ -154,6 +154,26 @@ func (w *Window) GetRect() (int, int, int, int) {
 	return w.x, w.y, w.width, w.height
 }
 
+func (w *Window) SetRect(x, y, width, height int) error {
+	err := w.updateRect()
+	if err != nil {
+		return fmt.Errorf("failed to get window position: %v", err)
+	}
+
+	move := user32.NewProc("MoveWindow")
+	r, _, _ := move.Call(w.hwnd, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 1)
+	if r == 0 {
+		return fmt.Errorf("MoveWindow failed")
+	}
+
+	w.x = x
+	w.y = y
+	w.width = width
+	w.height = height
+
+	return nil
+}
+
 func (w *Window) showWindow(nCmdShow int) error {
 	err := w.updateRect()
 	if err != nil {
@@ -194,4 +214,18 @@ func (w *Window) Restore() error {
 	}
 
 	return w.showWindow(1) // SW_SHOWNORMAL / SW_NORMAL
+}
+
+func UsableScreenDimensions() (int, int) {
+	var rect struct {
+		Left, Top, Right, Bottom int32
+	}
+
+	user32 := syscall.NewLazyDLL("user32.dll")
+	spi := user32.NewProc("SystemParametersInfoW")
+	SPI_GETWORKAREA := uintptr(0x0030)
+	r := uintptr(unsafe.Pointer(&rect))
+
+	spi.Call(SPI_GETWORKAREA, 0, r, 0)
+	return int(rect.Right), int(rect.Bottom)
 }
