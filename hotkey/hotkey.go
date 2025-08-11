@@ -7,9 +7,11 @@ import (
 )
 
 var (
-	user32         = syscall.NewLazyDLL("user32.dll")
-	registerHotKey = user32.NewProc("RegisterHotKey")
-	getMessage     = user32.NewProc("GetMessageW")
+	user32           = syscall.NewLazyDLL("user32.dll")
+	registerHotKey   = user32.NewProc("RegisterHotKey")
+	unregisterHotKey = user32.NewProc("UnregisterHotKey")
+	getMessage       = user32.NewProc("GetMessageW")
+	postQuitMessage  = user32.NewProc("PostQuitMessage")
 )
 
 const (
@@ -23,11 +25,30 @@ const (
 func RegisterGlobalHotkey(id, modifiers, vk int) error {
 	r, _, err := registerHotKey.Call(0, uintptr(id), uintptr(modifiers), uintptr(vk))
 	if r == 0 {
+		if err == syscall.Errno(0) {
+			err = syscall.GetLastError()
+		}
 		fmt.Printf("[hotkey] failed to register hotkey (id=%d, mod=%d, vk=%d): %v\n", id, modifiers, vk, err)
 		return err
 	}
+	//fmt.Printf("[hotkey] registered hotkey id=%d mod=%d vk=%d\n", id, modifiers, vk)
 
 	return nil
+}
+
+func UnregisterGlobalHotkey(id int) error {
+	r, _, err := unregisterHotKey.Call(0, uintptr(id))
+	if r == 0 {
+		if err == syscall.Errno(0) {
+			err = syscall.GetLastError()
+		}
+		return err
+	}
+	return nil
+}
+
+func PostQuit(exitCode int) {
+	postQuitMessage.Call(uintptr(exitCode))
 }
 
 func ListenHotkeys(callback func(id int)) {
@@ -42,7 +63,15 @@ func ListenHotkeys(callback func(id int)) {
 	for {
 		r, _, err := getMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if r == 0 {
-			fmt.Printf("[hotkey] win32 hotkey failed: %v\n", err)
+			//fmt.Println("[hotkey] message loop exiting (WM_QUIT)")
+			return
+		}
+		if r == ^uintptr(0) { // -1
+			if err == syscall.Errno(0) {
+				err = syscall.GetLastError()
+			}
+
+			fmt.Printf("[hotkey] GetMessageW error: %v\n", err)
 			continue
 		}
 		if msg.message == WM_HOTKEY {

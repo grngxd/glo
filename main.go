@@ -8,6 +8,7 @@ import (
 	"lattice/window"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -68,14 +69,30 @@ func main() {
 
 	running := true
 
-	hotkey.RegisterGlobalHotkey(1, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0x4F) // toggle
-	hotkey.RegisterGlobalHotkey(2, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBB) // grow master (+)
-	hotkey.RegisterGlobalHotkey(3, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBD) // shrink master (-)
-	hotkey.RegisterGlobalHotkey(4, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBE) // rotate master (.)
-	hotkey.RegisterGlobalHotkey(5, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0x51) // quit (Q)
+	// Start hotkey registration + message loop on a dedicated OS thread
+	hotkeyEvents := make(chan int, 32)
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		// register hotkeys on this thread
+		_ = hotkey.RegisterGlobalHotkey(1, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0x4F) // toggle
+		_ = hotkey.RegisterGlobalHotkey(2, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBB) // grow master (+)
+		_ = hotkey.RegisterGlobalHotkey(3, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBD) // shrink master (-)
+		_ = hotkey.RegisterGlobalHotkey(4, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBE) // rotate master (.)
+		_ = hotkey.RegisterGlobalHotkey(5, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0x51) // quit (Q)
+
+		hotkey.ListenHotkeys(func(id int) {
+			select {
+			case hotkeyEvents <- id:
+			default:
+				// drop
+			}
+		})
+	}()
 
 	go func() {
-		hotkey.ListenHotkeys(func(id int) {
+		for id := range hotkeyEvents {
 			mu.RLock()
 			snapshot := append([]*window.Window(nil), windows...)
 			mu.RUnlock()
@@ -96,14 +113,12 @@ func main() {
 				if masterFrac > 0.9 {
 					masterFrac = 0.9
 				}
-
 				triggerTile(snapshot)
 			case 3:
 				masterFrac -= 0.05
 				if masterFrac < 0.1 {
 					masterFrac = 0.1
 				}
-
 				triggerTile(snapshot)
 			case 4:
 				if len(snapshot) > 1 {
@@ -121,7 +136,7 @@ func main() {
 			case 5:
 				exitChan <- os.Interrupt
 			}
-		})
+		}
 	}()
 
 	for running {
