@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"lattice/hotkey"
-	"lattice/layout"
-	"lattice/window"
+	"glo/hotkey"
+	"glo/layout"
+	"glo/window"
 	"os"
 	"os/signal"
 	"runtime"
