@@ -4,13 +4,7 @@
 
 ![example](./assets/example.webp)
 
-<p align="center" style="width:100%;">
-    <blockquote>
-        <code>
-            a togglable tiling window manager for Windows 10/11
-        </code>
-    </blockquote>
-</p>
+> ` a togglable tiling window manager for Windows 10/11 `
 
 > [!CAUTION]
 > ### glo is in early development & may cause issues require a restart. use at your own risk.

@@ -127,8 +127,6 @@ func main() {
 	for running {
 		select {
 		case <-exitChan:
-			//fmt.Println("cleaning up")
-
 			mu.RLock()
 			current := append([]*window.Window(nil), windows...)
 			mu.RUnlock()
@@ -162,7 +160,6 @@ func main() {
 				windows = append(windows, w)
 				mu.Unlock()
 
-				// callbacks may run concurrently
 				w.OnMinimize(func() {
 					mu.Lock()
 					for i, ww := range windows {
