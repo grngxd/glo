@@ -1,6 +1,7 @@
 package hotkey
 
 import (
+	"fmt"
 	"syscall"
 	"unsafe"
 )
@@ -22,8 +23,10 @@ const (
 func RegisterGlobalHotkey(id, modifiers, vk int) error {
 	r, _, err := registerHotKey.Call(0, uintptr(id), uintptr(modifiers), uintptr(vk))
 	if r == 0 {
+		fmt.Printf("[hotkey] failed to register hotkey (id=%d, mod=%d, vk=%d): %v\n", id, modifiers, vk, err)
 		return err
 	}
+
 	return nil
 }
 
@@ -37,7 +40,11 @@ func ListenHotkeys(callback func(id int)) {
 		pt      struct{ x, y int32 }
 	}
 	for {
-		getMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
+		r, _, err := getMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
+		if r == 0 {
+			fmt.Printf("[hotkey] win32 hotkey failed: %v\n", err)
+			continue
+		}
 		if msg.message == WM_HOTKEY {
 			callback(int(msg.wParam))
 		}

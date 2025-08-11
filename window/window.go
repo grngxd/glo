@@ -8,7 +8,12 @@ import (
 )
 
 var user32 = syscall.NewLazyDLL("user32.dll")
-var procIsIconic = user32.NewProc("IsIconic")
+var (
+	procIsIconic            = user32.NewProc("IsIconic")
+	procGetWindowRectCached = user32.NewProc("GetWindowRect")
+	procMoveWindow          = user32.NewProc("MoveWindow")
+	procShowWindow          = user32.NewProc("ShowWindow")
+)
 
 type Window struct {
 	hwnd uintptr
@@ -51,7 +56,6 @@ func (w *Window) Hwnd() uintptr {
 }
 
 func (w *Window) updateRect() error {
-	gwr := user32.NewProc("GetWindowRect")
 
 	var rect struct {
 		Left   int32
@@ -60,7 +64,7 @@ func (w *Window) updateRect() error {
 		Bottom int32
 	}
 
-	r, _, _ := gwr.Call(w.hwnd, uintptr(unsafe.Pointer(&rect)))
+	r, _, _ := procGetWindowRectCached.Call(w.hwnd, uintptr(unsafe.Pointer(&rect)))
 	if r == 0 {
 		return fmt.Errorf("GetWindowRect failed")
 	}
@@ -97,8 +101,7 @@ func (w *Window) MoveTo(x, y int) error {
 		return fmt.Errorf("failed to get window position: %v", err)
 	}
 
-	move := user32.NewProc("MoveWindow")
-	r, _, _ := move.Call(w.hwnd, uintptr(x), uintptr(y), uintptr(w.width), uintptr(w.height), 1)
+	r, _, _ := procMoveWindow.Call(w.hwnd, uintptr(x), uintptr(y), uintptr(w.width), uintptr(w.height), 1)
 	if r == 0 {
 		return fmt.Errorf("MoveWindow failed")
 	}
@@ -115,8 +118,7 @@ func (w *Window) MoveDelta(dx, dy int) error {
 		return fmt.Errorf("failed to get window position: %v", err)
 	}
 
-	move := user32.NewProc("MoveWindow")
-	r, _, _ := move.Call(w.hwnd, uintptr(w.x+dx), uintptr(w.y+dy), uintptr(w.width), uintptr(w.height), 1)
+	r, _, _ := procMoveWindow.Call(w.hwnd, uintptr(w.x+dx), uintptr(w.y+dy), uintptr(w.width), uintptr(w.height), 1)
 	if r == 0 {
 		return fmt.Errorf("MoveWindow failed")
 	}
@@ -133,8 +135,7 @@ func (w *Window) Resize(width, height int) error {
 		return fmt.Errorf("failed to get window position: %v", err)
 	}
 
-	resize := user32.NewProc("MoveWindow")
-	r, _, _ := resize.Call(w.hwnd, uintptr(w.x), uintptr(w.y), uintptr(width), uintptr(height), 1)
+	r, _, _ := procMoveWindow.Call(w.hwnd, uintptr(w.x), uintptr(w.y), uintptr(width), uintptr(height), 1)
 	if r == 0 {
 		return fmt.Errorf("MoveWindow failed")
 	}
@@ -151,8 +152,7 @@ func (w *Window) ResizeDelta(dw, dh int) error {
 		return fmt.Errorf("failed to get window position: %v", err)
 	}
 
-	resize := user32.NewProc("MoveWindow")
-	r, _, _ := resize.Call(w.hwnd, uintptr(w.x), uintptr(w.y), uintptr(w.width+dw), uintptr(w.height+dh), 1)
+	r, _, _ := procMoveWindow.Call(w.hwnd, uintptr(w.x), uintptr(w.y), uintptr(w.width+dw), uintptr(w.height+dh), 1)
 	if r == 0 {
 		return fmt.Errorf("MoveWindow failed")
 	}
@@ -178,8 +178,7 @@ func (w *Window) SetRect(x, y, width, height int) error {
 		return fmt.Errorf("failed to get window position: %v", err)
 	}
 
-	move := user32.NewProc("MoveWindow")
-	r, _, _ := move.Call(w.hwnd, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 1)
+	r, _, _ := procMoveWindow.Call(w.hwnd, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 1)
 	if r == 0 {
 		return fmt.Errorf("MoveWindow failed")
 	}
@@ -193,13 +192,8 @@ func (w *Window) SetRect(x, y, width, height int) error {
 }
 
 func (w *Window) showWindow(nCmdShow int) error {
-	err := w.updateRect()
-	if err != nil {
-		return fmt.Errorf("failed to get window position: %v", err)
-	}
-
-	maximise := user32.NewProc("ShowWindow")
-	r, _, _ := maximise.Call(w.hwnd, uintptr(nCmdShow))
+	// No need to refresh rect just to change show state
+	r, _, _ := procShowWindow.Call(w.hwnd, uintptr(nCmdShow))
 	if r == 0 {
 		return fmt.Errorf("ShowWindow failed")
 	}
@@ -207,32 +201,9 @@ func (w *Window) showWindow(nCmdShow int) error {
 	return nil
 }
 
-func (w *Window) Minimise() error {
-	err := w.updateRect()
-	if err != nil {
-		return fmt.Errorf("failed to get window position: %v", err)
-	}
-
-	return w.showWindow(2) // SW_SHOWMINIMIZED
-}
-
-func (w *Window) Maximise() error {
-	err := w.updateRect()
-	if err != nil {
-		return fmt.Errorf("failed to get window position: %v", err)
-	}
-
-	return w.showWindow(3) // SW_SHOWMAXIMIZED / SW_MAXIMIZE
-}
-
-func (w *Window) Restore() error {
-	err := w.updateRect()
-	if err != nil {
-		return fmt.Errorf("failed to get window position: %v", err)
-	}
-
-	return w.showWindow(1) // SW_SHOWNORMAL / SW_NORMAL
-}
+func (w *Window) Minimise() error { return w.showWindow(2) }
+func (w *Window) Maximise() error { return w.showWindow(3) }
+func (w *Window) Restore() error  { return w.showWindow(1) }
 
 func (w *Window) OnMinimize(f func()) {
 	w.onMinimize = append(w.onMinimize, f)
