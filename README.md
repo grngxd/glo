@@ -1,13 +1,20 @@
-> [!CAUTION]
-> ### glo is in early development & may cause issues require a restart. use at your own risk.
-
 <p align="center" style="width:100%;">
     <img src="./assets/glo.svg" alt="glo banner" style="width:100%;max-width:100%;">
 </p>
 
 ![example](./assets/example.webp)
 
-> ` a togglable tiling window manager for Windows 10/11 `
+<p align="center" style="width:100%;">
+    <blockquote>
+        <code>
+            a togglable tiling window manager for Windows 10/11
+        </code>
+    </blockquote>
+</p>
+
+> [!CAUTION]
+> ### glo is in early development & may cause issues require a restart. use at your own risk.
+
 
 ## usage
 `glo [-padding 30] [-master 0.6]`
