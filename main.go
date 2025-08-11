@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"lattice/hotkey"
+	"lattice/layout"
 	"lattice/window"
 	"os"
 	"os/signal"
@@ -10,18 +12,16 @@ import (
 )
 
 func main() {
-	fmt.Println(window.UsableScreenDimensions())
+	fmt.Println(`
+gloWM - keybinds
+Win+Shift+O: toggle tiling
+`)
 	screenWidth, screenHeight := window.UsableScreenDimensions()
 
 	user32 := syscall.NewLazyDLL("user32.dll")
 	gfw := user32.NewProc("GetForegroundWindow")
 
-	type managedWindow struct {
-		win                        *window.Window
-		origX, origY, origW, origH int
-	}
-
-	var windows []*managedWindow
+	var windows []*window.Window
 
 	padding := 25
 
@@ -30,14 +30,35 @@ func main() {
 
 	running := true
 
+	tilingActive := false
+
+	go func() {
+		hotkey.RegisterGlobalHotkey(1, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0x4F) // Win+Shift+O toggle
+		hotkey.ListenHotkeys(func(id int) {
+			if id != 1 {
+				return
+			}
+			tilingActive = !tilingActive
+			if tilingActive {
+				layout.TileWindows(windows, screenWidth, screenHeight, padding)
+			} else {
+				// restore original geometry
+				for _, w := range windows {
+					w.Restore()
+					w.SetRect(w.Meta.Ox, w.Meta.Oy, w.Meta.Ow, w.Meta.Oh)
+				}
+			}
+		})
+	}()
+
 	for running {
 		select {
 		case <-exitChan:
-			fmt.Println("cleaning up")
+			//fmt.Println("cleaning up")
 
-			for _, mw := range windows {
-				mw.win.Restore()
-				mw.win.SetRect(mw.origX, mw.origY, mw.origW, mw.origH)
+			for _, w := range windows {
+				w.Restore()
+				w.SetRect(w.Meta.Ox, w.Meta.Oy, w.Meta.Ow, w.Meta.Oh)
 			}
 
 			running = false
@@ -50,22 +71,60 @@ func main() {
 			}
 
 			exists := false
-			for _, mw := range windows {
-				if mw.win.Hwnd() == hwnd {
+			for _, w := range windows {
+				if w.Hwnd() == hwnd {
 					exists = true
 					break
 				}
 			}
 
-			if !exists {
+			if !exists && window.IsAppWindow(hwnd) {
 				w := window.New(hwnd)
-				x, y, w0, h0 := w.GetRect()
-				windows = append(windows, &managedWindow{win: w, origX: x, origY: y, origW: w0, origH: h0})
+				windows = append(windows, w)
+				//fmt.Printf("added %d hwnd=%v\n", len(windows), w.Hwnd())
 
-				fmt.Printf("%v: %v\n", len(windows), w.Hwnd())
+				w.OnMinimize(func() {
+					for i, ww := range windows {
+						if ww == w {
+							windows = append(windows[:i], windows[i+1:]...)
+							break
+						}
+					}
+					if tilingActive {
+						layout.TileWindows(windows, screenWidth, screenHeight, padding)
+					}
+				})
 
-				w.Restore()
-				w.SetRect(padding, padding, screenWidth-padding*2, screenHeight-padding*2)
+				w.OnRestore(func() {
+					present := false
+					for _, ww := range windows {
+						if ww == w {
+							present = true
+							break
+						}
+					}
+					if !present {
+						windows = append(windows, w)
+					}
+					if tilingActive {
+						layout.TileWindows(windows, screenWidth, screenHeight, padding)
+					}
+				})
+
+				w.OnClose(func() {
+					for i, ww := range windows {
+						if ww == w {
+							windows = append(windows[:i], windows[i+1:]...)
+							break
+						}
+					}
+					if tilingActive {
+						layout.TileWindows(windows, screenWidth, screenHeight, padding)
+					}
+				})
+				if tilingActive {
+					layout.TileWindows(windows, screenWidth, screenHeight, padding)
+				}
 			}
 
 			time.Sleep(10 * time.Millisecond)

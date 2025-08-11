@@ -3,10 +3,12 @@ package window
 import (
 	"fmt"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
 var user32 = syscall.NewLazyDLL("user32.dll")
+var procIsIconic = user32.NewProc("IsIconic")
 
 type Window struct {
 	hwnd uintptr
@@ -16,6 +18,17 @@ type Window struct {
 
 	x int
 	y int
+
+	Meta struct {
+		Ox, Oy, Ow, Oh int // original position and size
+	}
+
+	// event handling
+	onMinimize []func()
+	onRestore  []func()
+	onClose    []func()
+	lastIconic bool
+	monitoring bool
 }
 
 func New(hwnd uintptr) *Window {
@@ -25,6 +38,11 @@ func New(hwnd uintptr) *Window {
 		panic(fmt.Errorf("failed to create window: %v", err))
 	}
 
+	w.Meta.Ox, w.Meta.Oy, w.Meta.Ow, w.Meta.Oh = w.x, w.y, w.width, w.height
+
+	// capture initial iconic state
+	iconic := isIconic(hwnd)
+	w.lastIconic = iconic
 	return w
 }
 
@@ -216,6 +234,56 @@ func (w *Window) Restore() error {
 	return w.showWindow(1) // SW_SHOWNORMAL / SW_NORMAL
 }
 
+func (w *Window) OnMinimize(f func()) {
+	w.onMinimize = append(w.onMinimize, f)
+	w.startMonitor()
+}
+
+func (w *Window) OnRestore(f func()) {
+	w.onRestore = append(w.onRestore, f)
+	w.startMonitor()
+}
+
+func (w *Window) OnClose(f func()) {
+	w.onClose = append(w.onClose, f)
+	w.startMonitor()
+}
+
+func (w *Window) startMonitor() {
+	if w.monitoring {
+		return
+	}
+	w.monitoring = true
+	go w.monitorLoop()
+}
+
+func (w *Window) monitorLoop() {
+	isWin := user32.NewProc("IsWindow")
+	for {
+		r, _, _ := isWin.Call(w.hwnd)
+		if r == 0 {
+			for _, cb := range w.onClose {
+				cb()
+			}
+			return
+		}
+		iconic := isIconic(w.hwnd)
+		if iconic != w.lastIconic {
+			if iconic {
+				for _, cb := range w.onMinimize {
+					cb()
+				}
+			} else {
+				for _, cb := range w.onRestore {
+					cb()
+				}
+			}
+			w.lastIconic = iconic
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
 func UsableScreenDimensions() (int, int) {
 	var rect struct {
 		Left, Top, Right, Bottom int32
@@ -228,4 +296,9 @@ func UsableScreenDimensions() (int, int) {
 
 	spi.Call(SPI_GETWORKAREA, 0, r, 0)
 	return int(rect.Right), int(rect.Bottom)
+}
+
+func isIconic(hwnd uintptr) bool {
+	r, _, _ := procIsIconic.Call(hwnd)
+	return r != 0
 }
