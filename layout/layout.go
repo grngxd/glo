@@ -1,6 +1,8 @@
 package layout
 
-import "glo/window"
+import (
+	"glo/window"
+)
 
 func TileWindows(windows []*window.Window, screenWidth, screenHeight, padding int, masterFrac float64) {
 	if len(windows) == 0 {

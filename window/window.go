@@ -129,6 +129,10 @@ func (w *Window) MoveDelta(dx, dy int) error {
 	return nil
 }
 
+func (w *Window) IsMinimized() bool {
+	return isIconic(w.hwnd)
+}
+
 func (w *Window) Resize(width, height int) error {
 	err := w.updateRect()
 	if err != nil {

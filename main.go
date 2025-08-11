@@ -26,8 +26,9 @@ func main() {
 	gfw := user32.NewProc("GetForegroundWindow")
 
 	var windows []*window.Window
-	var mu sync.RWMutex // protects windows slice
+	var mu sync.RWMutex
 	var tilingActive bool
+	var minimized = make(map[uintptr]bool)
 
 	padding := *paddingFlag
 	masterFrac := *masterFlag
@@ -37,10 +38,12 @@ func main() {
 	var lastTile time.Time
 	triggerTile := func(ws []*window.Window) {
 		tileMu.Lock()
+
 		defer tileMu.Unlock()
 		if !tilingActive {
 			return
 		}
+
 		if time.Since(lastTile) < 40*time.Millisecond {
 			if !pending {
 				pending = true
@@ -60,6 +63,7 @@ func main() {
 			}
 			return
 		}
+
 		lastTile = time.Now()
 		layout.TileWindows(ws, screenWidth, screenHeight, padding, masterFrac)
 	}
@@ -69,13 +73,11 @@ func main() {
 
 	running := true
 
-	// Start hotkey registration + message loop on a dedicated OS thread
 	hotkeyEvents := make(chan int, 32)
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
-		// register hotkeys on this thread
 		_ = hotkey.RegisterGlobalHotkey(1, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0x4F) // toggle
 		_ = hotkey.RegisterGlobalHotkey(2, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBB) // grow master (+)
 		_ = hotkey.RegisterGlobalHotkey(3, hotkey.MOD_WIN|hotkey.MOD_SHIFT, 0xBD) // shrink master (-)
@@ -94,16 +96,29 @@ func main() {
 	go func() {
 		for id := range hotkeyEvents {
 			mu.RLock()
-			snapshot := append([]*window.Window(nil), windows...)
+
+			snapshot := make([]*window.Window, 0, len(windows))
+
+			for _, w := range windows {
+				snapshot = append(snapshot, w)
+			}
+
 			mu.RUnlock()
+
+			var visibleSnapshot []*window.Window
+			for _, w := range snapshot {
+				if !w.IsMinimized() {
+					visibleSnapshot = append(visibleSnapshot, w)
+				}
+			}
 
 			switch id {
 			case 1:
 				tilingActive = !tilingActive
 				if tilingActive {
-					layout.TileWindows(snapshot, screenWidth, screenHeight, padding, masterFrac)
+					layout.TileWindows(visibleSnapshot, screenWidth, screenHeight, padding, masterFrac)
 				} else {
-					for _, w := range snapshot {
+					for _, w := range visibleSnapshot {
 						w.Restore()
 						w.SetRect(w.Meta.Ox, w.Meta.Oy, w.Meta.Ow, w.Meta.Oh)
 					}
@@ -113,15 +128,15 @@ func main() {
 				if masterFrac > 0.9 {
 					masterFrac = 0.9
 				}
-				triggerTile(snapshot)
+				triggerTile(visibleSnapshot)
 			case 3:
 				masterFrac -= 0.05
 				if masterFrac < 0.1 {
 					masterFrac = 0.1
 				}
-				triggerTile(snapshot)
+				triggerTile(visibleSnapshot)
 			case 4:
-				if len(snapshot) > 1 {
+				if len(visibleSnapshot) > 1 {
 					mu.Lock()
 					first := windows[0]
 					copy(windows, windows[1:])
@@ -131,7 +146,13 @@ func main() {
 					mu.RLock()
 					updatedSnapshot := append([]*window.Window(nil), windows...)
 					mu.RUnlock()
-					triggerTile(updatedSnapshot)
+					var updatedVisible []*window.Window
+					for _, w := range updatedSnapshot {
+						if !w.IsMinimized() {
+							updatedVisible = append(updatedVisible, w)
+						}
+					}
+					triggerTile(updatedVisible)
 				}
 			case 5:
 				exitChan <- os.Interrupt
@@ -169,7 +190,7 @@ func main() {
 			}
 			mu.RUnlock()
 
-			if !exists && window.IsAppWindow(hwnd) {
+			if !exists && window.IsAppWindow(hwnd) && !minimized[hwnd] {
 				w := window.New(hwnd)
 				mu.Lock()
 				windows = append(windows, w)
@@ -177,14 +198,18 @@ func main() {
 
 				w.OnMinimize(func() {
 					mu.Lock()
+
+					minimized[w.Hwnd()] = true
 					for i, ww := range windows {
-						if ww == w {
+						if ww.Hwnd() == w.Hwnd() {
 							windows = append(windows[:i], windows[i+1:]...)
 							break
 						}
 					}
+
 					current := append([]*window.Window(nil), windows...)
 					mu.Unlock()
+
 					if tilingActive {
 						layout.TileWindows(current, screenWidth, screenHeight, padding, masterFrac)
 					}
@@ -192,17 +217,21 @@ func main() {
 
 				w.OnRestore(func() {
 					mu.Lock()
+
+					delete(minimized, w.Hwnd())
 					present := false
 					for _, ww := range windows {
-						if ww == w {
+						if ww.Hwnd() == w.Hwnd() {
 							present = true
 							break
 						}
 					}
+
 					if !present {
 						windows = append(windows, w)
 					}
 					current := append([]*window.Window(nil), windows...)
+
 					mu.Unlock()
 					if tilingActive {
 						layout.TileWindows(current, screenWidth, screenHeight, padding, masterFrac)
@@ -212,7 +241,7 @@ func main() {
 				w.OnClose(func() {
 					mu.Lock()
 					for i, ww := range windows {
-						if ww == w {
+						if ww.Hwnd() == w.Hwnd() {
 							windows = append(windows[:i], windows[i+1:]...)
 							break
 						}
@@ -223,6 +252,7 @@ func main() {
 						layout.TileWindows(current, screenWidth, screenHeight, padding, masterFrac)
 					}
 				})
+
 				if tilingActive {
 					mu.RLock()
 					current := append([]*window.Window(nil), windows...)
